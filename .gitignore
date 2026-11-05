@@ -1,0 +1,48 @@
+﻿## Секреты и переменные окружения
+.env
+.env.local
+.env.*.local
+*.user
+*.suo
+
+## JetBrains Rider / IntelliJ
+.idea/
+*.sln.iml
+_ReSharper*/
+
+## Visual Studio / VS Code
+.vscode/
+*.userosscache
+*.sln.docstates
+
+## Сборка .NET (Бэкенд)
+**/[Bb]in/
+**/[Oo]bj/
+**/[Dd]ebug/
+**/[Rr]elease/
+*.trx
+*.publishsettings
+launchSettings.json.user
+
+## Node.js / Vite / React (Фронтенд)
+**/node_modules/
+**/dist/
+**/build/
+.npm
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+## Базы данных и файлы томов
+*.db
+*.sqlite
+*.log
+docker_data/
+postgres_data/
+redis_data/
+minio_data/
+
+## OS служебные файлы
+.DS_Store
+Thumbs.db
