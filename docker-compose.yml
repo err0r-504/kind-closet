@@ -3,6 +3,7 @@
     image: postgres:16-alpine
     container_name: kind-closet-postgres
     restart: always
+    command: -p 5433
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-kind_closet_db}
       POSTGRES_USER: ${POSTGRES_USER:-kind_closet_admin}
@@ -12,7 +13,7 @@
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-kind_closet_admin} -d $${POSTGRES_DB:-kind_closet_db}"]
+      test: ["CMD-SHELL", "pg_isready -p 5433 -U $${POSTGRES_USER:-kind_closet_admin} -d $${POSTGRES_DB:-kind_closet_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -57,6 +58,36 @@
       echo 'Бакет $${S3_BUCKET_NAME:-kind-closet-images} готов!';
       exit 0;
       "
+  
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: kind-closet-api
+    restart: always
+    ports:
+      - "5000:8080" # API будет доступно на localhost:5000
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      # Подключение к БД.
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5433;Database=${POSTGRES_DB:-kind_closet_db};Username=${POSTGRES_USER:-kind_closet_admin};Password=${POSTGRES_PASSWORD}
+      # Секреты для JWT.
+      - JwtSettings__Secret=${JWT_SECRET}
+      - JwtSettings__Issuer=${JWT_ISSUER}
+      - JwtSettings__Audience=${JWT_AUDIENCE}
+      - JwtSettings__ExpiryMinutes=60
+      - JwtSettings__RefreshExpiryDays=30
+      # Секреты для S3. ServiceURL указывает на контейнер s3 внутри сети Docker
+      - S3Storage__ServiceURL=http://s3:8333
+      - S3Storage__AccessKey=${S3_ACCESS_KEY:-test-access-key}
+      - S3Storage__SecretKey=${S3_SECRET_KEY:-test-secret-key}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      s3:
+        condition: service_started
 
 volumes:
   postgres_data:
