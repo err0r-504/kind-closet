@@ -1,5 +1,7 @@
 ﻿using System.Text;
 using kind_closet.Data;
+using kind_closet.Services.Interfaces;
+using kind_closet.Services.Implementations;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -8,44 +10,9 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Контроллеры и Swagger для .NET 8
+// 1. Контроллеры
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
-{
-    c.SwaggerDoc("v1", new OpenApiInfo
-    {
-        Title = "Kind Closet API (Ядро)",
-        Version = "v1",
-        Description = "Платформа обмена и вторичного использования вещей «Добрый шкаф»"
-    });
-
-    // Добавление поддержки авторизации через Bearer токен в UI
-    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Введите JWT токен: Bearer {ваш токен}"
-    });
-
-    c.AddSecurityRequirement(new OpenApiSecurityRequirement
-    {
-        {
-            new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
-        }
-    });
-});
 
 // 2. PostgreSQL + EF Core
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -60,30 +27,47 @@ builder.Services.AddStackExchangeRedisCache(options =>
 });
 
 // 4. JWT Аутентификация
-var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["Secret"] ?? "DefaultFallbackSecretKeyAtLeast32CharsLong!";
-var key = Encoding.UTF8.GetBytes(secretKey);
+// Регистрация сервисов
+builder.Services.AddScoped<IJwtTokenService, JwtTokenService>();
 
-builder.Services.AddAuthentication(options =>
-{
-    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-})
-.AddJwtBearer(options =>
-{
-    options.RequireHttpsMetadata = false;
-    options.SaveToken = true;
-    options.TokenValidationParameters = new TokenValidationParameters
+// Настройка JWT Аутентификации
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
     {
-        ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(key),
-        ValidateIssuer = true,
-        ValidIssuer = jwtSettings["Issuer"] ?? "kind-closet-api",
-        ValidateAudience = true,
-        ValidAudience = jwtSettings["Audience"] ?? "kind-closet-client",
-        ValidateLifetime = true,
-        ClockSkew = TimeSpan.Zero
-    };
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtSettings["Issuer"],
+            ValidateAudience = true,
+            ValidAudience = jwtSettings["Audience"],
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings["Secret"]!))
+        };
+    });
+
+// Настройка Swagger для поддержки JWT
+builder.Services.AddSwaggerGen(c =>
+{
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "Введите JWT токен: Bearer {token}",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = "Bearer" }
+            },
+            Array.Empty<string>()
+        }
+    });
 });
 
 builder.Services.AddAuthorization();
@@ -106,6 +90,13 @@ var app = builder.Build();
 // 6. Pipeline: Swagger JSON + Scalar UI
 if (app.Environment.IsDevelopment())
 {
+    app.UseSwagger();
+
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Kind Closet API v1");
+    });
+    
     app.UseSwagger(options =>
     {
         options.RouteTemplate = "openapi/{documentName}.json";
